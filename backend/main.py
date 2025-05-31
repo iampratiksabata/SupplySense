@@ -25,7 +25,9 @@ app.add_middleware(
 )
 
 load_dotenv()
-GEMINI_API_KEY = "AIzaSyBOx5_F5uLsI2qbQNUsEHfHzWri8kWsHqo"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY environment variable not set.")
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
