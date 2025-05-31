@@ -6,6 +6,12 @@ from sklearn.ensemble import IsolationForest
 from datetime import datetime
 import json
 from fastapi import HTTPException
+import openai
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI()
 
@@ -17,6 +23,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+load_dotenv()
+GEMINI_API_KEY = "AIzaSyBOx5_F5uLsI2qbQNUsEHfHzWri8kWsHqo"
+
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+class ChatMessage(BaseModel):
+    message: str
+    csv_data: Optional[str] = None
 
 @app.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
@@ -142,6 +159,208 @@ async def recommendations(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/recommendation")
+async def get_recommendation(request: Request):
+    body = await request.json()
+    analyze_result = body.get("analyze_result")
+    csv_data = body.get("csv_data")
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="Gemini API key not set.")
+    if not analyze_result or not csv_data:
+        raise HTTPException(status_code=400, detail="Missing analyze_result or csv_data.")
+
+    try:
+        # Prepare context for Gemini
+        context = f"""
+        Supply Chain Analysis Data:
+        - Total Suppliers: {analyze_result.get('total_suppliers')}
+        - Total Orders: {analyze_result.get('total_orders')}
+        - Total Order Value: ${analyze_result.get('total_order_value'):,.2f}
+        - Average Quality Score: {analyze_result.get('avg_quality_score'):.2%}
+        - On-Time Delivery Rate: {analyze_result.get('on_time_delivery_rate'):.2%}
+
+        Supplier Metrics:
+        {json.dumps(analyze_result.get('supplier_metrics', []), indent=2)}
+
+        Anomalous Suppliers:
+        {json.dumps(analyze_result.get('flakiest_suppliers', []), indent=2)}
+
+        Raw Data Sample:
+        {csv_data[:1000]}  # First 1000 chars of CSV data for context
+        """
+
+        prompt = f"""You are a supply chain optimization expert. Analyze the following data and provide recommendations in a specific JSON format.
+
+        Data to analyze:
+        {context}
+
+        Return a JSON object with two main sections:
+        1. recommendations: An array of recommendation objects
+        2. supplier_analysis: An object containing:
+           - underperforming_suppliers: Array of supplier objects with poor performance
+           - verified_suppliers: Array of supplier objects with good performance
+
+        Each recommendation must be a JSON object with exactly these fields:
+        {{
+            "id": "unique_id",
+            "title": "short_title",
+            "description": "detailed_explanation",
+            "recommendation": "specific_action_items",
+            "severity": "critical|warning|info",
+            "category": "supplier_performance|delivery_reliability|quality_control|cost_optimization|inventory_management|risk_mitigation|process_efficiency",
+            "impact_score": number_1_to_10,
+            "effort_score": number_1_to_10,
+            "estimated_savings": "financial_or_operational_impact",
+            "timeline": "immediate|short_term|long_term",
+            "metrics": {{
+                "current_value": "current_metric",
+                "target_value": "target_metric",
+                "improvement": "improvement_metric"
+            }},
+            "tags": ["tag1", "tag2"],
+            "risk_level": "high|medium|low",
+            "implementation_complexity": "high|medium|low",
+            "department": "procurement|logistics|quality|inventory|finance",
+            "priority": "p0|p1|p2"
+        }}
+
+        Each supplier object in underperforming_suppliers must have:
+        {{
+            "supplier_id": "id",
+            "issues": ["issue1", "issue2"],
+            "performance_metrics": {{
+                "quality_score": number,
+                "on_time_rate": number,
+                "total_orders": number,
+                "total_value": number
+            }},
+            "risk_level": "high|medium|low",
+            "recommended_actions": ["action1", "action2"]
+        }}
+
+        Each supplier object in verified_suppliers must have:
+        {{
+            "supplier_id": "id",
+            "strengths": ["strength1", "strength2"],
+            "performance_metrics": {{
+                "quality_score": number,
+                "on_time_rate": number,
+                "total_orders": number,
+                "total_value": number
+            }},
+            "reliability_score": number,
+            "recommended_usage": ["usage1", "usage2"]
+        }}
+
+        Focus on:
+        1. Supplier performance issues (especially those with low on-time delivery rates)
+        2. Quality control improvements (for suppliers with quality scores below 0.85)
+        3. Delivery reliability (given the 46.67% on-time delivery rate)
+        4. Cost optimization opportunities
+        5. Risk mitigation strategies
+
+        IMPORTANT: Return ONLY the JSON object with recommendations and supplier_analysis, no other text or explanation. The response must be valid JSON that can be parsed directly.
+        """
+
+        # Get recommendations from Gemini
+        response = model.generate_content(prompt)
+        
+        # Clean the response to ensure it's valid JSON
+        response_text = response.text.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
+        
+        response_data = json.loads(response_text)
+        recommendations = response_data.get('recommendations', [])
+        supplier_analysis = response_data.get('supplier_analysis', {
+            'underperforming_suppliers': [],
+            'verified_suppliers': []
+        })
+
+        # Add metadata
+        return {
+            "recommendations": recommendations,
+            "supplier_analysis": supplier_analysis,
+            "total_count": len(recommendations),
+            "categories": [
+                "supplier_performance",
+                "delivery_reliability",
+                "quality_control",
+                "cost_optimization",
+                "inventory_management",
+                "risk_mitigation",
+                "process_efficiency"
+            ],
+            "departments": [
+                "procurement",
+                "logistics",
+                "quality",
+                "inventory",
+                "finance"
+            ],
+            "severity_counts": {
+                "critical": sum(1 for rec in recommendations if rec["severity"] == "critical"),
+                "warning": sum(1 for rec in recommendations if rec["severity"] == "warning"),
+                "info": sum(1 for rec in recommendations if rec["severity"] == "info")
+            },
+            "priority_counts": {
+                "p0": sum(1 for rec in recommendations if rec["priority"] == "p0"),
+                "p1": sum(1 for rec in recommendations if rec["priority"] == "p1"),
+                "p2": sum(1 for rec in recommendations if rec["priority"] == "p2")
+            },
+            "risk_distribution": {
+                "high": sum(1 for rec in recommendations if rec["risk_level"] == "high"),
+                "medium": sum(1 for rec in recommendations if rec["risk_level"] == "medium"),
+                "low": sum(1 for rec in recommendations if rec["risk_level"] == "low")
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}")
+
+@app.post("/chat")
+async def chat(message: ChatMessage):
+    try:
+        # Build a system prompt that instructs Gemini to use the CSV data
+        prompt = f"""
+You are a supply chain assistant. You will receive a user question and a CSV containing supplier data. The CSV columns are: supplier_id, expected_delivery, actual_delivery, order_value, quality_score.
+
+When the user asks about a supplier (e.g., 'Tell me more about my supplier SUP003'), you must:
+- Parse the CSV.
+- Find the row(s) matching the supplier_id (e.g., SUP003).
+- Summarize delivery performance (on-time or delayed, by how many days), order value, and quality score for that supplier.
+- If the supplier is not found, say so.
+- If the user asks for overall stats, analyze the CSV and provide insights.
+
+Example:
+User: Tell me more about my supplier SUP003
+CSV: (see below)
+
+Response:
+Supplier SUP003 had 1 order:
+- Expected delivery: 2024-03-02, Actual delivery: 2024-03-04 (2 days late)
+- Order value: $30,000
+- Quality score: 0.78 (below average)
+
+Instructions:
+- Always answer using only the CSV data provided.
+- If the user asks for a summary, provide aggregate stats (average quality, % on-time, etc.).
+- If the user asks about a specific supplier, show their delivery and quality details.
+- Do not say you lack access to data—use the CSV.
+- Be concise and clear.
+
+User question: {message.message}
+CSV data:
+{message.csv_data or ''}
+"""
+        response = model.generate_content(prompt)
+        return {"response": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

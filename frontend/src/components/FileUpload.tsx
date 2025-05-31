@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 
 interface FileUploadProps {
-  onDataReceived: (data: any) => void
+  onDataReceived: (data: any, csvText?: string) => void
 }
 
 const FileUpload = ({ onDataReceived }: FileUploadProps) => {
@@ -30,7 +30,8 @@ const FileUpload = ({ onDataReceived }: FileUploadProps) => {
       }
 
       const data = await response.json()
-      onDataReceived(data)
+      const csvText = await file.text()
+      onDataReceived(data, csvText)
     } catch (err) {
       console.error('Error uploading file:', err)
       setError(err instanceof Error ? err.message : 'Failed to upload file')

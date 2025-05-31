@@ -41,6 +41,12 @@ const Dashboard = ({ data }: DashboardProps) => {
       icon: '💰'
     },
     {
+      label: 'Total Loss',
+      value: `$${data.supplier_metrics ? data.supplier_metrics.reduce((acc, s) => acc + (s.total_order_value * (1 - s.avg_quality_score)), 0).toLocaleString(undefined, {maximumFractionDigits: 0}) : 0}`,
+      color: 'bg-red-500',
+      icon: '💸'
+    },
+    {
       label: 'Avg Quality Score',
       value: `${(data.avg_quality_score * 100).toFixed(1)}%`,
       color: 'bg-yellow-500',
@@ -89,7 +95,9 @@ const Dashboard = ({ data }: DashboardProps) => {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Supplier Performance</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.supplier_metrics}>
+              <BarChart data={data.supplier_metrics.map(({supplier_id, avg_quality_score, on_time_delivery_rate}) => ({
+                supplier_id, avg_quality_score, on_time_delivery_rate
+              }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="supplier_id" stroke="#666" />
                 <YAxis stroke="#666" />
