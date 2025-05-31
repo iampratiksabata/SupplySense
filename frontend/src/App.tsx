@@ -46,8 +46,7 @@ function App() {
                 </div>
               </div>
             ) : <LandingPage onDataReceived={handleDataReceived} />} />
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/chat" element={<ChatPage />} />
+
             <Route path="/insights" element={<RecommendationsPage data={data} />} />
           </Routes>
         </main>
