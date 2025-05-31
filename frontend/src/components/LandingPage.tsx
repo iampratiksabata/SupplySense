@@ -30,7 +30,7 @@ const qualityDist = [
 
 const LandingPage = ({ onDataReceived }: LandingPageProps) => {
   return (
-    <div className="w-full h-full p-0 md:p-6 flex flex-col gap-8">
+    <div className="w-full h-full flex flex-col flex-1">
       <div className="bg-white rounded-2xl shadow p-4 md:p-8 mb-0 w-full">
         <h1 className="text-2xl md:text-3xl font-bold text-center mb-4 w-full">Upload Your Data</h1>
         <div className="w-full">

@@ -17,6 +17,7 @@
     "concurrently": "^8.2.2"
   },
   "dependencies": {
-    "framer-motion": "^12.15.0"
+    "framer-motion": "^12.15.0",
+    "react-router-dom": "^7.6.1"
   }
 }

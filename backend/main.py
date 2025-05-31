@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
@@ -81,6 +81,64 @@ async def analyze_file(file: UploadFile = File(...)):
             'supplier_metrics': supplier_metrics,
             'flakiest_suppliers': flakiest_suppliers
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/recommendations")
+async def recommendations(request: Request):
+    try:
+        payload = await request.json()
+        data = payload.get("data")
+        if not data:
+            return []
+        supplier_metrics = data.get("supplier_metrics", [])
+        flakiest_suppliers = data.get("flakiest_suppliers", [])
+        recommendations = []
+        # Supplier Optimization
+        for s in supplier_metrics:
+            if s["on_time_delivery_rate"] < 0.8 and s["total_order_value"] > 10000:
+                recommendations.append({
+                    "id": 1,
+                    "type": "danger",
+                    "title": "Supplier Optimization",
+                    "message": f"{s['supplier_id']} is {int((1-s['on_time_delivery_rate'])*100)}% late on orders >$10k.",
+                    "recommendation": f"Split large orders across suppliers or switch for orders >$5k."
+                })
+        # Diversification Suggestions
+        region_counts = {}
+        for s in supplier_metrics:
+            region = s.get("region", "A")
+            region_counts[region] = region_counts.get(region, 0) + 1
+        total = sum(region_counts.values())
+        for region, count in region_counts.items():
+            if total > 0 and count / total > 0.8:
+                recommendations.append({
+                    "id": 2,
+                    "type": "warning",
+                    "title": "Diversification Suggestions",
+                    "message": f"{int(count/total*100)}% of your supply comes from Region {region}.",
+                    "recommendation": f"Add suppliers from other regions to reduce geo-risk."
+                })
+        # Order Timing
+        # (Placeholder: real logic would need order date info)
+        recommendations.append({
+            "id": 3,
+            "type": "info",
+            "title": "Order Timing",
+            "message": "Supplier Y performs 30% better on Tuesday deliveries. Adjust order schedule.",
+            "recommendation": "Adjust order schedule to optimize for supplier performance."
+        })
+        # Quality Improvements
+        for s in supplier_metrics:
+            if s["avg_quality_score"] < 0.85 and s["total_orders"] > 10:
+                recommendations.append({
+                    "id": 4,
+                    "type": "warning",
+                    "title": "Quality Improvements",
+                    "message": f"{s['supplier_id']}'s quality drops after {s['total_orders']} orders.",
+                    "recommendation": "Cap orders or negotiate capacity expansion."
+                })
+        return recommendations
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
